@@ -131,6 +131,12 @@ jobs:
           cp "$GITHUB_WORKSPACE/.config/config" .config
           make defconfig
 
+          if grep -q '^CONFIG_PACKAGE_luci-i18n-.*-ru=y$' "$REQUESTED_PKGS_FILE"; then
+            sed -i 's/^# \(CONFIG_LUCI_LANG_ru\) is not set/\1=y/' .config || true
+            grep -q '^CONFIG_LUCI_LANG_ru=y$' .config || echo 'CONFIG_LUCI_LANG_ru=y' >> .config
+            make defconfig
+          fi
+
           grep '^CONFIG_PACKAGE_.*=y$' .config \
             | sed -E 's/^CONFIG_PACKAGE_(.*)=y$/\1/' \
             | sort -u > "$RESOLVED_PKGS_FILE" || true
@@ -227,8 +233,6 @@ jobs:
     if: inputs.publish_release
     needs: test-firmware
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - name: Download build artifacts
         uses: actions/download-artifact@v4
