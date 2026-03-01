@@ -14,9 +14,6 @@ on:
         default: v24.10.0
         type: string
 
-permissions:
-  contents: read
-
 jobs:
   validate-config:
     name: Validate build configuration
