@@ -1,0 +1,240 @@
+name: Reusable OpenWrt Build Pipeline
+
+on:
+  workflow_call:
+    inputs:
+      publish_release:
+        description: Publish GitHub Release after successful tests
+        required: false
+        default: false
+        type: boolean
+      openwrt_ref:
+        description: OpenWrt git ref to checkout
+        required: false
+        default: v24.10.0
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  validate-config:
+    name: Validate build configuration
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run config checks
+        run: |
+          set -euo pipefail
+
+          test -f ".config/config"
+          grep -q '^CONFIG_TARGET_mediatek=y' ".config/config"
+          grep -q '^CONFIG_TARGET_mediatek_filogic=y' ".config/config"
+          grep -q '^CONFIG_TARGET_mediatek_filogic_DEVICE_bananapi_bpi-r3=y' ".config/config"
+
+      - name: Validate OpenWrt ref
+        run: |
+          set -euo pipefail
+
+          REF="${{ inputs.openwrt_ref }}"
+          REMOTE_URL="https://git.openwrt.org/openwrt/openwrt.git"
+
+          if ! [[ "$REF" =~ ^[A-Za-z0-9._/-]+$ ]]; then
+            echo "Invalid openwrt_ref: '$REF'"
+            echo "Allowed characters: letters, numbers, '.', '_', '-', '/'."
+            exit 1
+          fi
+
+          if [[ "$REF" =~ ^[0-9a-fA-F]{7,40}$ ]]; then
+            if ! git ls-remote "$REMOTE_URL" | awk '{print $1}' | grep -iq "^$REF"; then
+              echo "openwrt_ref '$REF' looks like commit SHA, but it was not found in remote refs."
+              exit 1
+            fi
+          else
+            if ! git ls-remote --exit-code --heads "$REMOTE_URL" "$REF" >/dev/null 2>&1 && \
+               ! git ls-remote --exit-code --tags "$REMOTE_URL" "$REF" >/dev/null 2>&1; then
+              echo "openwrt_ref '$REF' not found as branch or tag in $REMOTE_URL."
+              exit 1
+            fi
+          fi
+
+  build:
+    name: Build firmware
+    needs: validate-config
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang flex bison g++ gawk \
+            gcc-multilib g++-multilib gettext libncurses5-dev libssl-dev \
+            python3 rsync unzip zlib1g-dev file wget cpio \
+            python3-setuptools quilt python3-pip libelf-dev libdw-dev \
+            lib32gcc-s1 libc6-dev-i386 lib32stdc++6
+
+      - name: Initialize OpenWrt and feeds
+        run: |
+          set -euo pipefail
+
+          git clone https://git.openwrt.org/openwrt/openwrt.git
+          cd openwrt
+          git checkout "${{ inputs.openwrt_ref }}"
+
+          if [ -f "$GITHUB_WORKSPACE/feeds.conf" ]; then
+            cp "$GITHUB_WORKSPACE/feeds.conf" feeds.conf
+          fi
+
+          if [ -d "$GITHUB_WORKSPACE/feeds.conf.d" ]; then
+            mkdir -p feeds.conf.d
+            for conf_file in "$GITHUB_WORKSPACE"/feeds.conf.d/*.conf; do
+              [ -e "$conf_file" ] || continue
+              cp "$conf_file" feeds.conf.d/
+            done
+          fi
+
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Load custom config and validate requested packages
+        run: |
+          set -euo pipefail
+          cd openwrt
+
+          REQUESTED_PKGS_FILE="$GITHUB_WORKSPACE/requested_packages.txt"
+          RESOLVED_PKGS_FILE="$GITHUB_WORKSPACE/resolved_packages.txt"
+          MISSING_PKGS_FILE="$GITHUB_WORKSPACE/missing_packages.txt"
+
+          grep '^CONFIG_PACKAGE_.*=y$' "$GITHUB_WORKSPACE/.config/config" \
+            | sed -E 's/^CONFIG_PACKAGE_(.*)=y$/\1/' \
+            | sort -u > "$REQUESTED_PKGS_FILE" || true
+
+          cp "$GITHUB_WORKSPACE/.config/config" .config
+          make defconfig
+
+          grep '^CONFIG_PACKAGE_.*=y$' .config \
+            | sed -E 's/^CONFIG_PACKAGE_(.*)=y$/\1/' \
+            | sort -u > "$RESOLVED_PKGS_FILE" || true
+
+          comm -23 "$REQUESTED_PKGS_FILE" "$RESOLVED_PKGS_FILE" > "$MISSING_PKGS_FILE" || true
+
+          if [ -s "$MISSING_PKGS_FILE" ]; then
+            echo "These requested packages are unavailable for this target/feed set:"
+            cat "$MISSING_PKGS_FILE"
+            exit 1
+          fi
+
+      - name: Build firmware
+        run: |
+          cd openwrt
+          make V=s -j"$(nproc)"
+
+      - name: Prepare artifacts and metadata
+        run: |
+          set -euo pipefail
+
+          TARGET_DIR="$GITHUB_WORKSPACE/openwrt/bin/targets/mediatek/filogic"
+          ARTIFACT_DIR="$GITHUB_WORKSPACE/artifacts"
+          mkdir -p "$ARTIFACT_DIR"
+
+          cd "$TARGET_DIR"
+
+          FIRMWARE_FILE="$(ls *bananapi_bpi-r3-squashfs-sdcard.img.gz 2>/dev/null | head -n 1)"
+          if [ -z "$FIRMWARE_FILE" ]; then
+            echo "Firmware image for BPI-R3 not found"
+            exit 1
+          fi
+
+          test -f "sha256sums"
+
+          cp "$FIRMWARE_FILE" "$ARTIFACT_DIR/"
+          cp "sha256sums" "$ARTIFACT_DIR/"
+
+          FIRMWARE_SIZE="$(stat -c%s "$FIRMWARE_FILE")"
+
+          {
+            echo "OpenWrt firmware for Banana Pi BPI-R3"
+            echo
+            echo "Built on: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
+            echo "Firmware file: $FIRMWARE_FILE"
+            echo "Firmware size: $FIRMWARE_SIZE bytes"
+            echo "Git commit: $GITHUB_SHA"
+            echo "Workflow run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          } > "$ARTIFACT_DIR/release_notes.txt"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: openwrt-firmware-bpi-r3
+          path: artifacts/*
+          if-no-files-found: error
+
+  test-firmware:
+    name: Test firmware artifact
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: openwrt-firmware-bpi-r3
+          path: dist
+
+      - name: Run smoke tests
+        run: |
+          set -euo pipefail
+
+          cd dist
+
+          FIRMWARE_FILE="$(ls *bananapi_bpi-r3-squashfs-sdcard.img.gz 2>/dev/null | head -n 1)"
+          if [ -z "$FIRMWARE_FILE" ]; then
+            echo "Firmware artifact missing"
+            exit 1
+          fi
+
+          gzip -t "$FIRMWARE_FILE"
+
+          FIRMWARE_SIZE="$(stat -c%s "$FIRMWARE_FILE")"
+          if [ "$FIRMWARE_SIZE" -lt 10000000 ]; then
+            echo "Firmware artifact is unexpectedly small: $FIRMWARE_SIZE bytes"
+            exit 1
+          fi
+
+          grep " $FIRMWARE_FILE$" sha256sums > firmware.sha256
+          sha256sum -c firmware.sha256
+
+  release:
+    name: Publish GitHub Release
+    if: inputs.publish_release
+    needs: test-firmware
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: openwrt-firmware-bpi-r3
+          path: dist
+
+      - name: Generate release metadata
+        id: meta
+        run: |
+          echo "tag=bpi-r3-openwrt-${{ inputs.openwrt_ref }}-r${GITHUB_RUN_NUMBER}a${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+          echo "name=OpenWrt BPI-R3 ${{ inputs.openwrt_ref }} build #${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: ${{ steps.meta.outputs.name }}
+          body_path: dist/release_notes.txt
+          files: |
+            dist/*bananapi_bpi-r3-squashfs-sdcard.img.gz
+            dist/sha256sums
+          fail_on_unmatched_files: true

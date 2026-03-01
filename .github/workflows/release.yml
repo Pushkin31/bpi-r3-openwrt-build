@@ -1,0 +1,22 @@
+name: Build OpenWrt Firmware (Release)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      openwrt_ref:
+        description: OpenWrt git ref (tag/branch/commit), e.g. v24.10.0
+        required: false
+        default: v24.10.0
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-test-and-release:
+    uses: ./.github/workflows/reusable-openwrt-build.yml
+    with:
+      publish_release: true
+      openwrt_ref: ${{ inputs.openwrt_ref || 'v24.10.0' }}
