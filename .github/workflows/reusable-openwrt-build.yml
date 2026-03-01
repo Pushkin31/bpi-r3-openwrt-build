@@ -86,15 +86,32 @@ jobs:
           cd openwrt
           git checkout "${{ inputs.openwrt_ref }}"
 
-          if [ -f "$GITHUB_WORKSPACE/feeds.conf" ]; then
-            cp "$GITHUB_WORKSPACE/feeds.conf" feeds.conf
-          fi
+          cp feeds.conf.default feeds.conf
+
+          append_feeds_from_file() {
+            local conf_file="$1"
+            [ -f "$conf_file" ] || return 0
+
+            while IFS= read -r line || [ -n "$line" ]; do
+              line="${line%$'\r'}"
+              case "$line" in
+                ''|'#'*)
+                  continue
+                  ;;
+              esac
+
+              if ! grep -Fqx "$line" feeds.conf; then
+                echo "$line" >> feeds.conf
+              fi
+            done < "$conf_file"
+          }
+
+          append_feeds_from_file "$GITHUB_WORKSPACE/feeds.conf"
 
           if [ -d "$GITHUB_WORKSPACE/feeds.conf.d" ]; then
-            mkdir -p feeds.conf.d
             for conf_file in "$GITHUB_WORKSPACE"/feeds.conf.d/*.conf; do
               [ -e "$conf_file" ] || continue
-              cp "$conf_file" feeds.conf.d/
+              append_feeds_from_file "$conf_file"
             done
           fi
 
