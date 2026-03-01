@@ -77,6 +77,14 @@ Pipeline сравнивает:
 
 Они копируются в OpenWrt перед `./scripts/feeds update -a` и `./scripts/feeds install -a`.
 
+Текущий feed Amnezia для OpenWrt:
+- `https://github.com/amnezia-vpn/amnezia-openwrt-packages.git`
+
+## Связанный проект (сервер)
+
+Для серверной части можно использовать ваш форк:
+- `https://github.com/Pushkin31/amneziawg-docker-server`
+
 ## Быстрый старт
 
 1. Создайте пустой репозиторий на GitHub
