@@ -8,8 +8,6 @@ on:
         required: false
         default: v24.10.0
         type: string
-  schedule:
-    - cron: '0 2 * * 1'  # Еженедельно в понедельник в 2:00 UTC
 
 permissions:
   contents: write

@@ -1,8 +1,6 @@
 name: Build OpenWrt Firmware (Release)
 
 on:
-  push:
-    branches: [ main ]
   workflow_dispatch:
     inputs:
       openwrt_ref:
