@@ -163,11 +163,33 @@ jobs:
 
           make defconfig
 
+          PARALLEL_LOG="$GITHUB_WORKSPACE/build-parallel.log"
+          SERIAL_LOG="$GITHUB_WORKSPACE/build-serial.log"
+
           echo "Starting full build..."
-          if ! make V=s -j"$(nproc)"; then
+          if ! make V=s -j"$(nproc)" 2>&1 | tee "$PARALLEL_LOG"; then
             echo "Full parallel build failed. Running serialized build to capture the first real error."
-            make V=s -j1
+
+            if ! make V=s -j1 2>&1 | tee "$SERIAL_LOG"; then
+              echo "=== Build error summary (parallel) ==="
+              grep -E "No space left on device|Killed|collect2: error|: error:|Error [0-9]+|^make\[[0-9]+\]: \*\*\*" "$PARALLEL_LOG" | tail -n 120 || true
+
+              echo "=== Build error summary (serial) ==="
+              grep -E "No space left on device|Killed|collect2: error|: error:|Error [0-9]+|^make\[[0-9]+\]: \*\*\*" "$SERIAL_LOG" | tail -n 120 || true
+
+              exit 1
+            fi
           fi
+
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openwrt-build-logs-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            build-parallel.log
+            build-serial.log
+          if-no-files-found: ignore
 
       - name: Prepare artifacts and metadata
         run: |
