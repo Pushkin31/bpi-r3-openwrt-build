@@ -158,8 +158,16 @@ jobs:
 
       - name: Build firmware
         run: |
+          set -euo pipefail
           cd openwrt
-          make V=s -j"$(nproc)"
+
+          make defconfig
+
+          echo "Starting full build..."
+          if ! make V=s -j"$(nproc)"; then
+            echo "Full parallel build failed. Running serialized build to capture the first real error."
+            make V=s -j1
+          fi
 
       - name: Prepare artifacts and metadata
         run: |
