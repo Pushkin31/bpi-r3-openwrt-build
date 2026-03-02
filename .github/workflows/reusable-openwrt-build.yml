@@ -156,6 +156,21 @@ jobs:
             exit 1
           fi
 
+      - name: Preflight kernel package check
+        run: |
+          set -euo pipefail
+          cd openwrt
+
+          make defconfig
+
+          PREFLIGHT_LOG="$GITHUB_WORKSPACE/build-preflight.log"
+          echo "Running preflight package/kernel/linux compile..."
+          if ! make V=s -j"$(nproc)" package/kernel/linux/compile 2>&1 | tee "$PREFLIGHT_LOG"; then
+            echo "=== Build error summary (preflight) ==="
+            grep -E "No space left on device|Killed|collect2: error|: error:|Error [0-9]+|^make\[[0-9]+\]: \*\*\*|ERROR:" "$PREFLIGHT_LOG" | tail -n 120 || true
+            exit 1
+          fi
+
       - name: Build firmware
         run: |
           set -euo pipefail
@@ -172,10 +187,10 @@ jobs:
 
             if ! make V=s -j1 2>&1 | tee "$SERIAL_LOG"; then
               echo "=== Build error summary (parallel) ==="
-              grep -E "No space left on device|Killed|collect2: error|: error:|Error [0-9]+|^make\[[0-9]+\]: \*\*\*" "$PARALLEL_LOG" | tail -n 120 || true
+              grep -E "No space left on device|Killed|collect2: error|: error:|Error [0-9]+|^make\[[0-9]+\]: \*\*\*|ERROR:" "$PARALLEL_LOG" | tail -n 120 || true
 
               echo "=== Build error summary (serial) ==="
-              grep -E "No space left on device|Killed|collect2: error|: error:|Error [0-9]+|^make\[[0-9]+\]: \*\*\*" "$SERIAL_LOG" | tail -n 120 || true
+              grep -E "No space left on device|Killed|collect2: error|: error:|Error [0-9]+|^make\[[0-9]+\]: \*\*\*|ERROR:" "$SERIAL_LOG" | tail -n 120 || true
 
               exit 1
             fi
@@ -187,6 +202,7 @@ jobs:
         with:
           name: openwrt-build-logs-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
+            build-preflight.log
             build-parallel.log
             build-serial.log
           if-no-files-found: ignore
