@@ -66,6 +66,17 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Cache OpenWrt toolchain and tools
+        uses: actions/cache@v4
+        with:
+          path: |
+            openwrt/staging_dir
+            openwrt/build_dir/host
+            openwrt/build_dir/toolchain-*
+          key: ${{ runner.os }}-openwrt-toolchain-${{ inputs.openwrt_ref }}-${{ hashFiles('.config/config') }}
+          restore-keys: |
+            ${{ runner.os }}-openwrt-toolchain-${{ inputs.openwrt_ref }}-
+
       - name: Set up environment
         run: |
           sudo apt-get update
