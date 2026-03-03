@@ -173,8 +173,8 @@ jobs:
             exit 1
           fi
 
-          echo "Running preflight package/kernel/linux compile..."
-          if ! make V=s -j1 package/kernel/linux/compile 2>&1 | tee "$PREFLIGHT_LOG"; then
+          echo "Running preflight target/linux compile..."
+          if ! make V=s -j1 target/linux/compile 2>&1 | tee "$PREFLIGHT_LOG"; then
             echo "=== Build error summary (preflight) ==="
             grep -E "No space left on device|Killed|collect2: error|: error:|No rule to make target|Error [0-9]+|^make\[[0-9]+\]: \*\*\*|ERROR:" "$PREFLIGHT_LOG" | tail -n 120 || true
             exit 1
