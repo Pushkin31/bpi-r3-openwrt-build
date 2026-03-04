@@ -21,3 +21,4 @@ CONFIG_PACKAGE_luci-app-package-manager=y
 CONFIG_PACKAGE_openssh-sftp-server=y
 
 # (Removed conflicting CONFIG_KERNEL_CRYPTO_CHACHA20_NEON)
+CONFIG_KERNEL_CRYPTO_CHACHA20_NEON=m
