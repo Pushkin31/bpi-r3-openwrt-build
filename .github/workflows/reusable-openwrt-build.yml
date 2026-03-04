@@ -66,8 +66,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Cache OpenWrt toolchain and tools
-        uses: actions/cache@v4
+      - name: Restore OpenWrt toolchain cache
+        uses: actions/cache/restore@v4
         with:
           path: |
             openwrt/staging_dir
@@ -167,7 +167,7 @@ jobs:
             exit 1
           fi
 
-      - name: Preflight kernel package check
+      - name: Build toolchain
         run: |
           set -euo pipefail
           cd openwrt
@@ -175,7 +175,6 @@ jobs:
           make defconfig
 
           PREFLIGHT_PREP_LOG="$GITHUB_WORKSPACE/build-preflight-prep.log"
-          PREFLIGHT_LOG="$GITHUB_WORKSPACE/build-preflight.log"
 
           echo "Preparing tools and toolchain for preflight..."
           if ! make V=s -j"$(nproc)" tools/install toolchain/install 2>&1 | tee "$PREFLIGHT_PREP_LOG"; then
@@ -183,6 +182,22 @@ jobs:
             grep -E "No space left on device|Killed|collect2: error|: error:|No rule to make target|Error [0-9]+|^make\[[0-9]+\]: \*\*\*|ERROR:" "$PREFLIGHT_PREP_LOG" | tail -n 120 || true
             exit 1
           fi
+
+      - name: Save OpenWrt toolchain cache
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            openwrt/staging_dir
+            openwrt/build_dir/host
+            openwrt/build_dir/toolchain-*
+          key: ${{ runner.os }}-openwrt-toolchain-${{ inputs.openwrt_ref }}-${{ hashFiles('.config/config') }}
+
+      - name: Preflight kernel package check
+        run: |
+          set -euo pipefail
+          cd openwrt
+
+          PREFLIGHT_LOG="$GITHUB_WORKSPACE/build-preflight.log"
 
           echo "Running preflight target/linux compile..."
           if ! make V=s -j1 target/linux/compile 2>&1 | tee "$PREFLIGHT_LOG"; then
