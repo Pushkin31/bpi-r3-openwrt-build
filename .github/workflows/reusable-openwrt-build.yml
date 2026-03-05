@@ -79,6 +79,7 @@ jobs:
         run: |
           mkdir -p artifacts
           cp imagebuilder/bin/targets/mediatek/filogic/*bananapi_bpi-r3-sdcard.img.gz artifacts/ || true
+          cp imagebuilder/bin/targets/mediatek/filogic/*bananapi_bpi-r3-sdcard.manifest artifacts/ || true
           cp imagebuilder/bin/targets/mediatek/filogic/sha256sums artifacts/ || true
           
           {
