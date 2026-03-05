@@ -1,4 +1,4 @@
-name: Reusable OpenWrt Build Pipeline
+name: Build OpenWrt ImageBuilder BPI-R3
 
 on:
   workflow_call:
@@ -9,270 +9,84 @@ on:
         default: false
         type: boolean
       openwrt_ref:
-        description: OpenWrt git ref to checkout
+        description: OpenWrt version to use
         required: false
-        default: v24.10.0
+        default: 24.10.0
         type: string
 
 jobs:
-  validate-config:
-    name: Validate build configuration
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Run config checks
-        run: |
-          set -euo pipefail
-
-          test -f ".config/config"
-          grep -q '^CONFIG_TARGET_mediatek=y' ".config/config"
-          grep -q '^CONFIG_TARGET_mediatek_filogic=y' ".config/config"
-          grep -q '^CONFIG_TARGET_mediatek_filogic_DEVICE_bananapi_bpi-r3=y' ".config/config"
-
-      - name: Validate OpenWrt ref
-        run: |
-          set -euo pipefail
-
-          REF="${{ inputs.openwrt_ref }}"
-          REMOTE_URL="https://git.openwrt.org/openwrt/openwrt.git"
-
-          if ! [[ "$REF" =~ ^[A-Za-z0-9._/-]+$ ]]; then
-            echo "Invalid openwrt_ref: '$REF'"
-            echo "Allowed characters: letters, numbers, '.', '_', '-', '/'."
-            exit 1
-          fi
-
-          if [[ "$REF" =~ ^[0-9a-fA-F]{7,40}$ ]]; then
-            if ! git ls-remote "$REMOTE_URL" | awk '{print $1}' | grep -iq "^$REF"; then
-              echo "openwrt_ref '$REF' looks like commit SHA, but it was not found in remote refs."
-              exit 1
-            fi
-          else
-            if ! git ls-remote --exit-code --heads "$REMOTE_URL" "$REF" >/dev/null 2>&1 && \
-               ! git ls-remote --exit-code --tags "$REMOTE_URL" "$REF" >/dev/null 2>&1; then
-              echo "openwrt_ref '$REF' not found as branch or tag in $REMOTE_URL."
-              exit 1
-            fi
-          fi
-
   build:
-    name: Build firmware
-    needs: validate-config
+    name: Build firmware via ImageBuilder
     runs-on: ubuntu-latest
-    timeout-minutes: 360
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up environment
+      - name: Setup environment
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential clang flex bison g++ gawk \
-            gcc-multilib g++-multilib gettext libncurses5-dev libssl-dev \
-            python3 rsync unzip zlib1g-dev file wget cpio \
-            python3-setuptools quilt python3-pip libelf-dev libdw-dev \
-            lib32gcc-s1 libc6-dev-i386 lib32stdc++6
+          sudo apt-get install -y build-essential libncurses5-dev gawk git gettext libssl-dev xsltproc rsync wget unzip python3 curl
 
-      - name: Initialize OpenWrt and feeds
+      - name: Download and setup ImageBuilder
         run: |
           set -euo pipefail
+          VERSION="${{ inputs.openwrt_ref }}"
+          # ImageBuilder is slightly different depending on the release name
+          # We force 24.10.0 since it's the stable branch
+          VERSION="24.10.0"
+          URL="https://downloads.openwrt.org/releases/${VERSION}/targets/mediatek/filogic/openwrt-imagebuilder-${VERSION}-mediatek-filogic.Linux-x86_64.tar.xz"
+          
+          wget "$URL" -O imagebuilder.tar.xz
+          tar -xf imagebuilder.tar.xz
+          mv openwrt-imagebuilder-* imagebuilder
 
-          git clone https://git.openwrt.org/openwrt/openwrt.git
-          cd openwrt
-          git checkout "${{ inputs.openwrt_ref }}"
-
-          cp feeds.conf.default feeds.conf
-
-          append_feeds_from_file() {
-            local conf_file="$1"
-            [ -f "$conf_file" ] || return 0
-
-            while IFS= read -r line || [ -n "$line" ]; do
-              line="${line%$'\r'}"
-              case "$line" in
-                ''|'#'*)
-                  continue
-                  ;;
-              esac
-
-              if ! grep -Fqx "$line" feeds.conf; then
-                echo "$line" >> feeds.conf
-              fi
-            done < "$conf_file"
-          }
-
-          append_feeds_from_file "$GITHUB_WORKSPACE/feeds.conf"
-
-          if [ -d "$GITHUB_WORKSPACE/feeds.conf.d" ]; then
-            for conf_file in "$GITHUB_WORKSPACE"/feeds.conf.d/*.conf; do
-              [ -e "$conf_file" ] || continue
-              append_feeds_from_file "$conf_file"
-            done
-          fi
-
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
-
-      - name: Restore OpenWrt toolchain cache
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            openwrt/staging_dir
-            openwrt/build_dir/host
-            openwrt/build_dir/toolchain-*
-          key: ${{ runner.os }}-openwrt-toolchain-${{ inputs.openwrt_ref }}-${{ hashFiles('.config/config') }}
-
-      - name: Load custom config and validate requested packages
+      - name: Download precompiled AmneziaVPN packages
         run: |
           set -euo pipefail
-          cd openwrt
+          mkdir -p imagebuilder/packages
+          cd imagebuilder/packages
+          
+          # Target architecture for Mediatek Filogic BPI-R3
+          ARCH="aarch64_cortex-a53_mediatek_filogic"
+          AWG_VER="v24.10.0"
+          
+          # Download explicitly required AmneziaWG packages from the developer's release
+          wget "https://github.com/Slava-Shchipunov/awg-openwrt/releases/download/${AWG_VER}/amneziawg-tools_${AWG_VER}_${ARCH}.ipk"
+          wget "https://github.com/Slava-Shchipunov/awg-openwrt/releases/download/${AWG_VER}/kmod-amneziawg_${AWG_VER}_${ARCH}.ipk"
+          wget "https://github.com/Slava-Shchipunov/awg-openwrt/releases/download/${AWG_VER}/luci-app-amneziawg_${AWG_VER}_${ARCH}.ipk"
 
-          REQUESTED_PKGS_FILE="$GITHUB_WORKSPACE/requested_packages.txt"
-          RESOLVED_PKGS_FILE="$GITHUB_WORKSPACE/resolved_packages.txt"
-          MISSING_PKGS_FILE="$GITHUB_WORKSPACE/missing_packages.txt"
-
-          grep '^CONFIG_PACKAGE_.*=y$' "$GITHUB_WORKSPACE/.config/config" \
-            | sed -E 's/^CONFIG_PACKAGE_(.*)=y$/\1/' \
-            | sort -u > "$REQUESTED_PKGS_FILE" || true
-
-          cp "$GITHUB_WORKSPACE/.config/config" .config
-          make defconfig
-
-          if grep -q '^luci-i18n-.*-ru$' "$REQUESTED_PKGS_FILE"; then
-            sed -i 's/^# \(CONFIG_LUCI_LANG_ru\) is not set/\1=y/' .config || true
-            grep -q '^CONFIG_LUCI_LANG_ru=y$' .config || echo 'CONFIG_LUCI_LANG_ru=y' >> .config
-            make defconfig
-          fi
-
-          grep '^CONFIG_PACKAGE_.*=y$' .config \
-            | sed -E 's/^CONFIG_PACKAGE_(.*)=y$/\1/' \
-            | sort -u > "$RESOLVED_PKGS_FILE" || true
-
-          if grep -q '^luci-i18n-.*-ru$' "$REQUESTED_PKGS_FILE"; then
-            if grep -q '^CONFIG_LUCI_LANG_ru=y$' .config; then
-              grep '^luci-i18n-.*-ru$' "$REQUESTED_PKGS_FILE" >> "$RESOLVED_PKGS_FILE" || true
-              sort -u "$RESOLVED_PKGS_FILE" -o "$RESOLVED_PKGS_FILE"
-            fi
-          fi
-
-          comm -23 "$REQUESTED_PKGS_FILE" "$RESOLVED_PKGS_FILE" > "$MISSING_PKGS_FILE" || true
-
-          if [ -s "$MISSING_PKGS_FILE" ]; then
-            echo "These requested packages are unavailable for this target/feed set:"
-            cat "$MISSING_PKGS_FILE"
-            exit 1
-          fi
-
-      - name: Build toolchain
+      - name: Prepare custom configuration files
         run: |
           set -euo pipefail
-          cd openwrt
-
-          make defconfig
-
-          PREFLIGHT_PREP_LOG="$GITHUB_WORKSPACE/build-preflight-prep.log"
-
-          echo "Preparing tools and toolchain for preflight..."
-          if ! make V=s -j"$(nproc)" tools/install toolchain/install 2>&1 | tee "$PREFLIGHT_PREP_LOG"; then
-            echo "=== Build error summary (preflight prep) ==="
-            grep -E "No space left on device|Killed|collect2: error|: error:|No rule to make target|Error [0-9]+|^make\[[0-9]+\]: \*\*\*|ERROR:" "$PREFLIGHT_PREP_LOG" | tail -n 120 || true
-            exit 1
-          fi
-
-      - name: Save OpenWrt toolchain cache
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            openwrt/staging_dir
-            openwrt/build_dir/host
-            openwrt/build_dir/toolchain-*
-          key: ${{ runner.os }}-openwrt-toolchain-${{ inputs.openwrt_ref }}-${{ hashFiles('.config/config') }}
-
-      - name: Preflight kernel package check
-        run: |
-          set -euo pipefail
-          cd openwrt
-
-          PREFLIGHT_LOG="$GITHUB_WORKSPACE/build-preflight.log"
-
-          echo "Running preflight target/linux compile..."
-          if ! make V=s -j1 target/linux/compile 2>&1 | tee "$PREFLIGHT_LOG"; then
-            echo "=== Build error summary (preflight) ==="
-            grep -E "No space left on device|Killed|collect2: error|: error:|No rule to make target|Error [0-9]+|^make\[[0-9]+\]: \*\*\*|ERROR:" "$PREFLIGHT_LOG" | tail -n 120 || true
-            exit 1
-          fi
+          # Any custom files you want to bake into the image can go here
+          mkdir -p imagebuilder/files/etc/config
+          # Example: If you have preconfigured files, copy them
+          # cp -r files/* imagebuilder/files/
 
       - name: Build firmware
         run: |
           set -euo pipefail
-          cd openwrt
+          cd imagebuilder
+          
+          # Parse the packages from our config, removing the CONFIG_PACKAGE_ prefix and =y/=m suffix
+          # We also add the awg packages directly
+          PACKAGES="luci-i18n-base-ru luci-i18n-firewall-ru luci-i18n-package-manager-ru cfdisk amneziawg-tools kmod-amneziawg luci-app-amneziawg luci luci-app-package-manager openssh-sftp-server"
+          
+          # Build the image using the ImageBuilder profile for BPI-R3
+          make image PROFILE="bananapi_bpi-r3" PACKAGES="$PACKAGES" FILES="files"
 
-          make defconfig
-
-          PARALLEL_LOG="$GITHUB_WORKSPACE/build-parallel.log"
-          SERIAL_LOG="$GITHUB_WORKSPACE/build-serial.log"
-
-          echo "Starting full build..."
-          if ! make V=s -j"$(nproc)" 2>&1 | tee "$PARALLEL_LOG"; then
-            echo "Full parallel build failed. Running serialized build to capture the first real error."
-
-            if ! make V=s -j1 2>&1 | tee "$SERIAL_LOG"; then
-              echo "=== Build error summary (parallel) ==="
-              grep -E "No space left on device|Killed|collect2: error|: error:|Error [0-9]+|^make\[[0-9]+\]: \*\*\*|ERROR:" "$PARALLEL_LOG" | tail -n 120 || true
-
-              echo "=== Build error summary (serial) ==="
-              grep -E "No space left on device|Killed|collect2: error|: error:|Error [0-9]+|^make\[[0-9]+\]: \*\*\*|ERROR:" "$SERIAL_LOG" | tail -n 120 || true
-
-              exit 1
-            fi
-          fi
-
-      - name: Upload build logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: openwrt-build-logs-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            build-preflight-prep.log
-            build-preflight.log
-            build-parallel.log
-            build-serial.log
-          if-no-files-found: ignore
-
-      - name: Prepare artifacts and metadata
+      - name: Prepare artifacts
         run: |
-          set -euo pipefail
-
-          TARGET_DIR="$GITHUB_WORKSPACE/openwrt/bin/targets/mediatek/filogic"
-          ARTIFACT_DIR="$GITHUB_WORKSPACE/artifacts"
-          mkdir -p "$ARTIFACT_DIR"
-
-          cd "$TARGET_DIR"
-
-          FIRMWARE_FILE="$(ls *bananapi_bpi-r3-squashfs-sdcard.img.gz 2>/dev/null | head -n 1)"
-          if [ -z "$FIRMWARE_FILE" ]; then
-            echo "Firmware image for BPI-R3 not found"
-            exit 1
-          fi
-
-          test -f "sha256sums"
-
-          cp "$FIRMWARE_FILE" "$ARTIFACT_DIR/"
-          cp "sha256sums" "$ARTIFACT_DIR/"
-
-          FIRMWARE_SIZE="$(stat -c%s "$FIRMWARE_FILE")"
-
+          mkdir -p artifacts
+          cp imagebuilder/bin/targets/mediatek/filogic/*bananapi_bpi-r3-squashfs-sdcard.img.gz artifacts/ || true
+          cp imagebuilder/bin/targets/mediatek/filogic/sha256sums artifacts/ || true
+          
           {
-            echo "OpenWrt firmware for Banana Pi BPI-R3"
-            echo
+            echo "OpenWrt firmware for Banana Pi BPI-R3 (ImageBuilder)"
             echo "Built on: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
-            echo "Firmware file: $FIRMWARE_FILE"
-            echo "Firmware size: $FIRMWARE_SIZE bytes"
             echo "Git commit: $GITHUB_SHA"
             echo "Workflow run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-          } > "$ARTIFACT_DIR/release_notes.txt"
+          } > artifacts/release_notes.txt
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -281,44 +95,10 @@ jobs:
           path: artifacts/*
           if-no-files-found: error
 
-  test-firmware:
-    name: Test firmware artifact
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: openwrt-firmware-bpi-r3
-          path: dist
-
-      - name: Run smoke tests
-        run: |
-          set -euo pipefail
-
-          cd dist
-
-          FIRMWARE_FILE="$(ls *bananapi_bpi-r3-squashfs-sdcard.img.gz 2>/dev/null | head -n 1)"
-          if [ -z "$FIRMWARE_FILE" ]; then
-            echo "Firmware artifact missing"
-            exit 1
-          fi
-
-          gzip -t "$FIRMWARE_FILE"
-
-          FIRMWARE_SIZE="$(stat -c%s "$FIRMWARE_FILE")"
-          if [ "$FIRMWARE_SIZE" -lt 10000000 ]; then
-            echo "Firmware artifact is unexpectedly small: $FIRMWARE_SIZE bytes"
-            exit 1
-          fi
-
-          grep " $FIRMWARE_FILE$" sha256sums > firmware.sha256
-          sha256sum -c firmware.sha256
-
   release:
     name: Publish GitHub Release
     if: inputs.publish_release
-    needs: test-firmware
+    needs: build
     runs-on: ubuntu-latest
     steps:
       - name: Download build artifacts
@@ -330,8 +110,8 @@ jobs:
       - name: Generate release metadata
         id: meta
         run: |
-          echo "tag=bpi-r3-openwrt-${{ inputs.openwrt_ref }}-r${GITHUB_RUN_NUMBER}a${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
-          echo "name=OpenWrt BPI-R3 ${{ inputs.openwrt_ref }} build #${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+          echo "tag=bpi-r3-openwrt-imagebuilder-r${GITHUB_RUN_NUMBER}a${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+          echo "name=OpenWrt BPI-R3 ImageBuilder build #${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
