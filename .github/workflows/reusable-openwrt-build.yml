@@ -78,7 +78,7 @@ jobs:
       - name: Prepare artifacts
         run: |
           mkdir -p artifacts
-          cp imagebuilder/bin/targets/mediatek/filogic/*bananapi_bpi-r3-squashfs-sdcard.img.gz artifacts/ || true
+          cp imagebuilder/bin/targets/mediatek/filogic/*bananapi_bpi-r3-sdcard.img.gz artifacts/ || true
           cp imagebuilder/bin/targets/mediatek/filogic/sha256sums artifacts/ || true
           
           {
@@ -120,6 +120,6 @@ jobs:
           name: ${{ steps.meta.outputs.name }}
           body_path: dist/release_notes.txt
           files: |
-            dist/*bananapi_bpi-r3-squashfs-sdcard.img.gz
+            dist/*bananapi_bpi-r3-sdcard.img.gz
             dist/sha256sums
           fail_on_unmatched_files: true
