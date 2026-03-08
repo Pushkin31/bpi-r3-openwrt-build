@@ -74,6 +74,9 @@ jobs:
           set -euo pipefail
           cd imagebuilder
           
+          # Fix OpenSSL path for local signing key generation in downloaded ImageBuilders
+          export OPENSSL_CONF=/etc/ssl/openssl.cnf
+          
           if [[ "${{ inputs.openwrt_ref }}" == 25.* ]]; then
             LUCI_PKG="luci-proto-amneziawg"
           else
