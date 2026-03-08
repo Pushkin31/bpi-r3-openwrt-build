@@ -61,6 +61,18 @@ jobs:
           wget "https://github.com/Slava-Shchipunov/awg-openwrt/releases/download/${AWG_VER}/kmod-amneziawg_${AWG_VER}_${ARCH}.${EXT}"
           wget "https://github.com/Slava-Shchipunov/awg-openwrt/releases/download/${AWG_VER}/${LUCI_PKG}_${AWG_VER}_${ARCH}.${EXT}"
 
+          # APK requires files to be strictly named <name>-<version>.apk, unlike IPK.
+          # We extract the true name and version from the .PKGINFO inside the apk and rename them.
+          if [ "$EXT" = "apk" ]; then
+            for file in *.apk; do
+              pkgname=$(tar -Oxf "$file" .PKGINFO 2>/dev/null | grep '^pkgname = ' | cut -d' ' -f3 || true)
+              pkgver=$(tar -Oxf "$file" .PKGINFO 2>/dev/null | grep '^pkgver = ' | cut -d' ' -f3 || true)
+              if [ -n "$pkgname" ] && [ -n "$pkgver" ]; then
+                mv "$file" "${pkgname}-${pkgver}.apk"
+              fi
+            done
+          fi
+
       - name: Prepare custom configuration files
         run: |
           set -euo pipefail
@@ -73,9 +85,6 @@ jobs:
         run: |
           set -euo pipefail
           cd imagebuilder
-          
-          # Fix OpenSSL path for local signing key generation in downloaded ImageBuilders
-          export OPENSSL_CONF=/etc/ssl/openssl.cnf
           
           if [[ "${{ inputs.openwrt_ref }}" == 25.* ]]; then
             LUCI_PKG="luci-proto-amneziawg"
