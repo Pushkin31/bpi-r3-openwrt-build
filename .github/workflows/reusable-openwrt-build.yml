@@ -47,10 +47,19 @@ jobs:
           ARCH="aarch64_cortex-a53_mediatek_filogic"
           AWG_VER="v${{ inputs.openwrt_ref }}"
           
+          # OpenWrt 25.12+ uses .apk, older versions use .ipk
+          if [[ "${{ inputs.openwrt_ref }}" == 25.* ]]; then
+            EXT="apk"
+            LUCI_PKG="luci-proto-amneziawg"
+          else
+            EXT="ipk"
+            LUCI_PKG="luci-app-amneziawg"
+          fi
+          
           # Download explicitly required AmneziaWG packages from the developer's release
-          wget "https://github.com/Slava-Shchipunov/awg-openwrt/releases/download/${AWG_VER}/amneziawg-tools_${AWG_VER}_${ARCH}.ipk"
-          wget "https://github.com/Slava-Shchipunov/awg-openwrt/releases/download/${AWG_VER}/kmod-amneziawg_${AWG_VER}_${ARCH}.ipk"
-          wget "https://github.com/Slava-Shchipunov/awg-openwrt/releases/download/${AWG_VER}/luci-app-amneziawg_${AWG_VER}_${ARCH}.ipk"
+          wget "https://github.com/Slava-Shchipunov/awg-openwrt/releases/download/${AWG_VER}/amneziawg-tools_${AWG_VER}_${ARCH}.${EXT}"
+          wget "https://github.com/Slava-Shchipunov/awg-openwrt/releases/download/${AWG_VER}/kmod-amneziawg_${AWG_VER}_${ARCH}.${EXT}"
+          wget "https://github.com/Slava-Shchipunov/awg-openwrt/releases/download/${AWG_VER}/${LUCI_PKG}_${AWG_VER}_${ARCH}.${EXT}"
 
       - name: Prepare custom configuration files
         run: |
@@ -65,9 +74,15 @@ jobs:
           set -euo pipefail
           cd imagebuilder
           
+          if [[ "${{ inputs.openwrt_ref }}" == 25.* ]]; then
+            LUCI_PKG="luci-proto-amneziawg"
+          else
+            LUCI_PKG="luci-app-amneziawg"
+          fi
+          
           # Parse the packages from our config, removing the CONFIG_PACKAGE_ prefix and =y/=m suffix
           # We also add the awg packages directly
-          PACKAGES="luci-i18n-base-ru luci-i18n-firewall-ru luci-i18n-package-manager-ru cfdisk amneziawg-tools kmod-amneziawg luci-app-amneziawg luci luci-app-package-manager openssh-sftp-server"
+          PACKAGES="luci-i18n-base-ru luci-i18n-firewall-ru luci-i18n-package-manager-ru cfdisk amneziawg-tools kmod-amneziawg ${LUCI_PKG} luci luci-app-package-manager openssh-sftp-server"
           
           # Build the image using the ImageBuilder profile for BPI-R3
           make image PROFILE="bananapi_bpi-r3" PACKAGES="$PACKAGES" FILES="files"
