@@ -65,13 +65,12 @@ jobs:
           # OpenWrt 25.12 uses the new APK v3 format (ADBd signature) which cannot be parsed by tar or zgrep.
           # We use the native apk binary provided in the ImageBuilder host tools to extract the correct name.
           if [ "$EXT" = "apk" ]; then
-            APK_BIN="../staging_dir/host/bin/apk"
+            APK_BIN=$(find .. -name apk -type f -executable | head -n 1)
             for file in *.apk; do
-              # 'apk manifest' prints the package name and version on the first line, e.g. "amneziawg-tools-1.0-r1"
-              # Fallback to 'apk info' if manifest fails on older apk versions.
-              fullname=$($APK_BIN manifest "$file" 2>/dev/null | head -n 1 | awk '{print $1}')
+              # Use || true to prevent set -euo pipefail from killing the script if a command is unsupported
+              fullname=$("$APK_BIN" manifest "$file" 2>/dev/null | head -n 1 | awk '{print $1}' || true)
               if [ -z "$fullname" ]; then
-                fullname=$($APK_BIN info "$file" 2>/dev/null | head -n 1 | awk '{print $1}')
+                fullname=$("$APK_BIN" info "$file" 2>/dev/null | head -n 1 | awk '{print $1}' || true)
               fi
               
               if [ -n "$fullname" ]; then
