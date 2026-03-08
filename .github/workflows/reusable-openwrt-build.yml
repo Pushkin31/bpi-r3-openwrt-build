@@ -62,15 +62,20 @@ jobs:
           wget "https://github.com/Slava-Shchipunov/awg-openwrt/releases/download/${AWG_VER}/${LUCI_PKG}_${AWG_VER}_${ARCH}.${EXT}"
 
           # APK requires files to be strictly named <name>-<version>.apk, unlike IPK.
-          # We extract the true name and version from the .PKGINFO inside the apk and rename them.
+          # OpenWrt 25.12 uses the new APK v3 format (ADBd signature) which cannot be parsed by tar or zgrep.
+          # We use the native apk binary provided in the ImageBuilder host tools to extract the correct name.
           if [ "$EXT" = "apk" ]; then
+            APK_BIN="../staging_dir/host/bin/apk"
             for file in *.apk; do
-              # Alpine .apk files are concatenated gzip streams. GNU tar often fails to parse them.
-              # zgrep safely extracts the plain text metadata directly from the stream.
-              pkgname=$(zgrep -a '^pkgname = ' "$file" | head -n 1 | awk '{print $3}' || true)
-              pkgver=$(zgrep -a '^pkgver = ' "$file" | head -n 1 | awk '{print $3}' || true)
-              if [ -n "$pkgname" ] && [ -n "$pkgver" ]; then
-                mv "$file" "${pkgname}-${pkgver}.apk"
+              # 'apk manifest' prints the package name and version on the first line, e.g. "amneziawg-tools-1.0-r1"
+              # Fallback to 'apk info' if manifest fails on older apk versions.
+              fullname=$($APK_BIN manifest "$file" 2>/dev/null | head -n 1 | awk '{print $1}')
+              if [ -z "$fullname" ]; then
+                fullname=$($APK_BIN info "$file" 2>/dev/null | head -n 1 | awk '{print $1}')
+              fi
+              
+              if [ -n "$fullname" ]; then
+                mv "$file" "${fullname}.apk"
               fi
             done
           fi
