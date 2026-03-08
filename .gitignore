@@ -1,0 +1,31 @@
+# Build artifacts
+*.img
+*.img.gz
+*.bin
+*.log
+artifacts/
+dist/
+openwrt/
+requested_packages.txt
+resolved_packages.txt
+missing_packages.txt
+release_notes.txt
+
+# Temporary files
+tmp/
+temp/
+
+# IDE files
+.vscode/
+.idea/
+
+# Claude Code local files
+.claude/
+
+# Local/internal notes
+devnotes.md
+docs/archive/
+
+# System files
+.DS_Store
+Thumbs.db
