@@ -86,6 +86,10 @@ jobs:
           set -euo pipefail
           cd imagebuilder
           
+          # Prevent OpenWrt's bundled OpenSSL from crashing when it tries to parse
+          # Ubuntu 24.04's host /etc/ssl/openssl.cnf which contains unsupported modules
+          export OPENSSL_CONF=/dev/null
+          
           if [[ "${{ inputs.openwrt_ref }}" == 25.* ]]; then
             LUCI_PKG="luci-proto-amneziawg"
           else
