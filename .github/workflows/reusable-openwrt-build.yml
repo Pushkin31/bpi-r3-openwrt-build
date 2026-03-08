@@ -65,8 +65,10 @@ jobs:
           # We extract the true name and version from the .PKGINFO inside the apk and rename them.
           if [ "$EXT" = "apk" ]; then
             for file in *.apk; do
-              pkgname=$(tar -Oxf "$file" .PKGINFO 2>/dev/null | grep '^pkgname = ' | cut -d' ' -f3 || true)
-              pkgver=$(tar -Oxf "$file" .PKGINFO 2>/dev/null | grep '^pkgver = ' | cut -d' ' -f3 || true)
+              # Alpine .apk files are concatenated gzip streams. GNU tar often fails to parse them.
+              # zgrep safely extracts the plain text metadata directly from the stream.
+              pkgname=$(zgrep -a '^pkgname = ' "$file" | head -n 1 | awk '{print $3}' || true)
+              pkgver=$(zgrep -a '^pkgver = ' "$file" | head -n 1 | awk '{print $3}' || true)
               if [ -n "$pkgname" ] && [ -n "$pkgver" ]; then
                 mv "$file" "${pkgname}-${pkgver}.apk"
               fi
