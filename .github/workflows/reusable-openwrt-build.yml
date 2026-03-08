@@ -1,0 +1,164 @@
+name: Build OpenWrt ImageBuilder BPI-R3
+
+on:
+  workflow_call:
+    inputs:
+      publish_release:
+        description: Publish GitHub Release after successful tests
+        required: false
+        default: false
+        type: boolean
+      openwrt_ref:
+        description: OpenWrt version to use
+        required: false
+        default: 24.10.5
+        type: string
+      build_number:
+        description: Custom build number override (optional)
+        required: false
+        type: string
+
+jobs:
+  build:
+    name: Build firmware via ImageBuilder
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libncurses5-dev gawk git gettext libssl-dev xsltproc rsync wget unzip python3 curl zstd
+
+      - name: Download and setup ImageBuilder
+        run: |
+          set -euo pipefail
+          VERSION="${{ inputs.openwrt_ref }}"
+          URL="https://downloads.openwrt.org/releases/${VERSION}/targets/mediatek/filogic/openwrt-imagebuilder-${VERSION}-mediatek-filogic.Linux-x86_64.tar.zst"
+          
+          wget "$URL" -O imagebuilder.tar.zst
+          tar -I zstd -xf imagebuilder.tar.zst
+          mv openwrt-imagebuilder-* imagebuilder
+
+      - name: Download precompiled AmneziaVPN packages
+        run: |
+          set -euo pipefail
+          mkdir -p imagebuilder/packages
+          cd imagebuilder/packages
+          
+          # Target architecture for Mediatek Filogic BPI-R3
+          ARCH="aarch64_cortex-a53_mediatek_filogic"
+          AWG_VER="v${{ inputs.openwrt_ref }}"
+          
+          # OpenWrt 25.12+ uses .apk, older versions use .ipk
+          if [[ "${{ inputs.openwrt_ref }}" == 25.* ]]; then
+            EXT="apk"
+          else
+            EXT="ipk"
+          fi
+          
+          LUCI_PKG="luci-proto-amneziawg"
+          
+          # Download explicitly required AmneziaWG packages from the developer's release
+          wget "https://github.com/Slava-Shchipunov/awg-openwrt/releases/download/${AWG_VER}/amneziawg-tools_${AWG_VER}_${ARCH}.${EXT}"
+          wget "https://github.com/Slava-Shchipunov/awg-openwrt/releases/download/${AWG_VER}/kmod-amneziawg_${AWG_VER}_${ARCH}.${EXT}"
+          wget "https://github.com/Slava-Shchipunov/awg-openwrt/releases/download/${AWG_VER}/${LUCI_PKG}_${AWG_VER}_${ARCH}.${EXT}"
+
+      - name: Prepare custom configuration files
+        run: |
+          set -euo pipefail
+          # Any custom files you want to bake into the image can go here
+          mkdir -p imagebuilder/files/etc/config
+          # Example: If you have preconfigured files, copy them
+          # cp -r files/* imagebuilder/files/
+
+      - name: Build firmware
+        run: |
+          set -euo pipefail
+          cd imagebuilder
+          
+          # Prevent OpenWrt's bundled OpenSSL from crashing when it tries to parse
+          # Ubuntu 24.04's host /etc/ssl/openssl.cnf which contains unsupported modules
+          export OPENSSL_CONF=/dev/null
+          
+          LUCI_PKG="luci-proto-amneziawg"
+          
+          # Parse the packages from our config, removing the CONFIG_PACKAGE_ prefix and =y/=m suffix
+          # We also add the awg packages directly
+          PACKAGES="luci-i18n-base-ru luci-i18n-firewall-ru luci-i18n-package-manager-ru cfdisk amneziawg-tools kmod-amneziawg ${LUCI_PKG} luci luci-app-package-manager openssh-sftp-server"
+          
+          # APK v3 workaround: let the build run once to generate the index and complain about filenames.
+          # We capture the exact filenames apk is expecting directly from the error log!
+          echo "Running initial index generation (expecting failure on new .apk names)..."
+          make image PROFILE="bananapi_bpi-r3" PACKAGES="$PACKAGES" FILES="files" > build.log 2>&1 || true
+          
+          if grep -q "package mentioned in index not found" build.log; then
+            grep "package mentioned in index not found" build.log | while read -r line; do
+               expected=$(echo "$line" | sed 's/ERROR: //' | cut -d':' -f1)
+               base_name=$(echo "$expected" | rev | cut -d'-' -f3- | rev)
+               orig_file=$(ls packages/${base_name}_*.apk 2>/dev/null | head -n 1)
+               if [ -n "$orig_file" ]; then
+                 mv "$orig_file" "packages/${expected}.apk"
+                 echo "Renamed $orig_file to packages/${expected}.apk based on apk index."
+               fi
+            done
+          fi
+          
+          # Second pass: Now the files have the exact names apk expects.
+          make image PROFILE="bananapi_bpi-r3" PACKAGES="$PACKAGES" FILES="files"
+
+      - name: Prepare artifacts
+        run: |
+          mkdir -p artifacts
+          cp imagebuilder/bin/targets/mediatek/filogic/*bananapi_bpi-r3-sdcard.img.gz artifacts/ || true
+          cp imagebuilder/bin/targets/mediatek/filogic/*.manifest artifacts/ || true
+          cp imagebuilder/bin/targets/mediatek/filogic/sha256sums artifacts/ || true
+          
+          {
+            echo "OpenWrt firmware for Banana Pi BPI-R3 (ImageBuilder)"
+            echo "Built on: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
+            echo "Git commit: $GITHUB_SHA"
+            echo "Workflow run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          } > artifacts/release_notes.txt
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: openwrt-firmware-bpi-r3
+          path: artifacts/*
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    if: inputs.publish_release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: openwrt-firmware-bpi-r3
+          path: dist
+
+      - name: Generate release metadata
+        id: meta
+        run: |
+          if [ -n "${{ inputs.build_number }}" ]; then
+            BUILD_NUM="${{ inputs.build_number }}"
+          else
+            BUILD_NUM="${GITHUB_RUN_NUMBER}"
+          fi
+          echo "tag=bpi-r3-openwrt-imagebuilder-r${BUILD_NUM}a${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+          echo "name=OpenWrt BPI-R3 ImageBuilder build #${BUILD_NUM}.${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: ${{ steps.meta.outputs.name }}
+          body_path: dist/release_notes.txt
+          files: |
+            dist/*bananapi_bpi-r3-sdcard.img.gz
+            dist/sha256sums
+          fail_on_unmatched_files: true
