@@ -61,24 +61,6 @@ jobs:
           wget "https://github.com/Slava-Shchipunov/awg-openwrt/releases/download/${AWG_VER}/kmod-amneziawg_${AWG_VER}_${ARCH}.${EXT}"
           wget "https://github.com/Slava-Shchipunov/awg-openwrt/releases/download/${AWG_VER}/${LUCI_PKG}_${AWG_VER}_${ARCH}.${EXT}"
 
-          # APK requires files to be strictly named <name>-<version>.apk, unlike IPK.
-          # OpenWrt 25.12 uses the new APK v3 format (ADBd signature) which cannot be parsed by tar or zgrep.
-          # We use the native apk binary provided in the ImageBuilder host tools to extract the correct name.
-          if [ "$EXT" = "apk" ]; then
-            APK_BIN=$(find .. -name apk -type f -executable | head -n 1)
-            for file in *.apk; do
-              # Use || true to prevent set -euo pipefail from killing the script if a command is unsupported
-              fullname=$("$APK_BIN" manifest "$file" 2>/dev/null | head -n 1 | awk '{print $1}' || true)
-              if [ -z "$fullname" ]; then
-                fullname=$("$APK_BIN" info "$file" 2>/dev/null | head -n 1 | awk '{print $1}' || true)
-              fi
-              
-              if [ -n "$fullname" ]; then
-                mv "$file" "${fullname}.apk"
-              fi
-            done
-          fi
-
       - name: Prepare custom configuration files
         run: |
           set -euo pipefail
@@ -106,7 +88,24 @@ jobs:
           # We also add the awg packages directly
           PACKAGES="luci-i18n-base-ru luci-i18n-firewall-ru luci-i18n-package-manager-ru cfdisk amneziawg-tools kmod-amneziawg ${LUCI_PKG} luci luci-app-package-manager openssh-sftp-server"
           
-          # Build the image using the ImageBuilder profile for BPI-R3
+          # APK v3 workaround: let the build run once to generate the index and complain about filenames.
+          # We capture the exact filenames apk is expecting directly from the error log!
+          echo "Running initial index generation (expecting failure on new .apk names)..."
+          make image PROFILE="bananapi_bpi-r3" PACKAGES="$PACKAGES" FILES="files" > build.log 2>&1 || true
+          
+          if grep -q "package mentioned in index not found" build.log; then
+            grep "package mentioned in index not found" build.log | while read -r line; do
+               expected=$(echo "$line" | sed 's/ERROR: //' | cut -d':' -f1)
+               base_name=$(echo "$expected" | rev | cut -d'-' -f3- | rev)
+               orig_file=$(ls packages/${base_name}_*.apk 2>/dev/null | head -n 1)
+               if [ -n "$orig_file" ]; then
+                 mv "$orig_file" "packages/${expected}.apk"
+                 echo "Renamed $orig_file to packages/${expected}.apk based on apk index."
+               fi
+            done
+          fi
+          
+          # Second pass: Now the files have the exact names apk expects.
           make image PROFILE="bananapi_bpi-r3" PACKAGES="$PACKAGES" FILES="files"
 
       - name: Prepare artifacts
