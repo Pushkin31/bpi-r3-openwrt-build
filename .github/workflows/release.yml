@@ -6,7 +6,7 @@ on:
       openwrt_ref:
         description: OpenWrt git ref (tag/branch/commit), e.g. v24.10.0
         required: false
-        default: v24.10.0
+        default: 24.10.5
         type: string
 
 permissions:
@@ -17,4 +17,4 @@ jobs:
     uses: ./.github/workflows/reusable-openwrt-build.yml
     with:
       publish_release: true
-      openwrt_ref: ${{ inputs.openwrt_ref || 'v24.10.0' }}
+      openwrt_ref: ${{ inputs.openwrt_ref || '24.10.5' }}

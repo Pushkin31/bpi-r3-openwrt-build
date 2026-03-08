@@ -11,7 +11,7 @@ on:
       openwrt_ref:
         description: OpenWrt version to use
         required: false
-        default: 24.10.0
+        default: 24.10.5
         type: string
 
 jobs:
@@ -31,9 +31,6 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${{ inputs.openwrt_ref }}"
-          # ImageBuilder is slightly different depending on the release name
-          # We force 24.10.0 since it's the stable branch
-          VERSION="24.10.0"
           URL="https://downloads.openwrt.org/releases/${VERSION}/targets/mediatek/filogic/openwrt-imagebuilder-${VERSION}-mediatek-filogic.Linux-x86_64.tar.zst"
           
           wget "$URL" -O imagebuilder.tar.zst
@@ -48,7 +45,7 @@ jobs:
           
           # Target architecture for Mediatek Filogic BPI-R3
           ARCH="aarch64_cortex-a53_mediatek_filogic"
-          AWG_VER="v24.10.0"
+          AWG_VER="v${{ inputs.openwrt_ref }}"
           
           # Download explicitly required AmneziaWG packages from the developer's release
           wget "https://github.com/Slava-Shchipunov/awg-openwrt/releases/download/${AWG_VER}/amneziawg-tools_${AWG_VER}_${ARCH}.ipk"
