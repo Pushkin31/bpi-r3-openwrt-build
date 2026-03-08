@@ -57,6 +57,50 @@
    - **Build OpenWrt Firmware (Build-Only)** для тестовой сборки (сохранится в артефактах).
    - **Build OpenWrt Firmware (Release)** для публикации на главной странице репозитория.
 
+## Установка и прошивка (Banana Pi BPI-R3)
+
+Плата BPI-R3 имеет переключатели (джамперы) для выбора устройства загрузки. 
+- **1** = On/Вверх
+- **0** = Off/Вниз
+- **X** = Не имеет значения (вторичный селектор)
+
+| Режим загрузки | A | B | C (NAND/NOR) | D (SD/eMMC) |
+| :--- | :--- | :--- | :--- | :--- |
+| **SD Карта** | 1 | 1 | X | 1 |
+| **eMMC** | 0 | 1 | X | 0 |
+| **NAND** | 1 | 0 | 1 | X |
+| **NOR** | 0 | 0 | 0 | X |
+
+### 1. Загрузка с SD-карты
+1. Скачайте файл `*bananapi_bpi-r3-sdcard.img.gz` из релизов.
+2. Запишите его на SD-карту с помощью **BalenaEtcher**, **Rufus** или через терминал (`dd`).
+3. Установите переключатели в режим **SD Карта** (A=1, B=1, C=1, D=1).
+4. Вставьте карту и включите роутер.
+
+### 2. Установка во внутреннюю память (eMMC / NAND / NOR)
+Загрузившись с SD-карты, вы можете перенести систему во внутреннюю память прямо из терминала OpenWrt (через SSH):
+
+**Перенос в NAND:**
+```bash
+fw_setenv bootcmd "env default bootcmd ; saveenv ; run ubi_init ; bootmenu 0"
+reboot
+```
+*(После перезагрузки установите джамперы в режим NAND: A=1, B=0, C=1, D=0)*
+
+**Перенос в NOR:**
+```bash
+fw_setenv bootcmd "env default bootcmd ; saveenv ; run nor_init ; bootmenu 0"
+reboot
+```
+*(Джамперы в режим NOR: A=0, B=0, C=0, D=0)*
+
+**Перенос в eMMC (с NAND):**
+```bash
+fw_setenv bootcmd "env default bootcmd ; saveenv ; run emmc_init ; bootmenu 0"
+reboot
+```
+*(Джамперы в режим eMMC: A=0, B=1, C=1, D=0)*
+
 ## Лицензия
 
 См. `LICENSE.md`.
