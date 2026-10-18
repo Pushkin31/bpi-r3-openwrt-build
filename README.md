@@ -1,14 +1,14 @@
 # Banana Pi BPI-R3 OpenWrt ImageBuilder Pipeline
 
-Современный и невероятно быстрый репозиторий для автоматической сборки кастомной прошивки OpenWrt под **Banana Pi BPI-R3** с предустановленным **AmneziaVPN**.
+Современный и быстрый репозиторий для автоматической сборки кастомной прошивки под **Banana Pi BPI-R3** на базе официального **OpenWrt ImageBuilder**.
 
 ## Что делает репозиторий
 
 Вместо компиляции исходного кода OpenWrt с нуля (что занимает часы и часто приводит к ошибкам зависимостей ядра), этот пайплайн использует официальный **OpenWrt ImageBuilder**. 
 
 - ⚡️ Сборка полностью готовой прошивки занимает **всего 2-4 минуты**.
-- 📦 Автоматически скачивает прекомпилированные пакеты AmneziaWG напрямую из релизов [Slava-Shchipunov/awg-openwrt](https://github.com/Slava-Shchipunov/awg-openwrt).
-- 🔄 Поддерживает динамическое переключение между старыми (24.10) и новыми (25.12+) форматами пакетов (`.ipk` и `.apk`).
+- 📦 Собирает базовый набор пакетов из `.config/config`.
+- ➕ Позволяет передать дополнительные пакеты прямо при ручном запуске workflow, не меняя конфигурацию репозитория.
 - 🚀 Публикация готовых `.img.gz` образов и списка пакетов (`.manifest`) в GitHub Releases.
 
 ## Структура
@@ -21,9 +21,10 @@
 ## Как работает CI/CD
 
 ### Ручной запуск (Workflow Dispatch)
-При запуске экшена вы можете указать две переменные:
-1. **OpenWrt version to use**: Версия OpenWrt (по умолчанию `24.10.5`). Можно указать, например, `25.12.0`. Пайплайн сам подберет правильный архиватор и формат пакетов.
-2. **Custom build number override (optional)**: Позволяет переопределить номер билда в названии релиза (например, вписать `4`, чтобы релиз назывался `#4.1`), игнорируя системный счетчик попыток GitHub.
+При запуске экшена можно указать:
+1. **OpenWrt version to use**: Версия OpenWrt (по умолчанию `24.10.5`). Можно указать, например, `25.12.0`.
+2. **Additional package names for this build**: Дополнительные пакеты через пробел, например `curl nano`. Они действуют только для текущей сборки и добавляются к пакетам из `.config/config`.
+3. **Custom build number override (optional)**: Только для Release workflow; переопределяет номер билда в названии релиза.
 
 ### Результат сборки
 В разделе Artifacts (или в Releases) появятся:
@@ -33,29 +34,37 @@
 
 ## Как менять состав пакетов
 
-1. Откройте файл `.config/config`.
-2. Добавьте нужные пакеты в формате `CONFIG_PACKAGE_<name>=y` или `=m`. 
-   *(Примечание: скрипт автоматически отрезает префиксы и суффиксы, передавая в ImageBuilder чистые имена пакетов).*
-3. Сделайте commit/push. 
+Базовый список хранится в `.config/config`:
 
-Пакеты AmneziaWG зашиты в саму логику скачивания в `.github/workflows/reusable-openwrt-build.yml` и устанавливаются принудительно:
-- `amneziawg-tools`
-- `kmod-amneziawg`
-- `luci-proto-amneziawg`
+1. Добавьте пакет в формате `CONFIG_PACKAGE_<name>=y` или `=m`.
+2. Сделайте commit/push.
 
-## Связанный проект (сервер)
+Для разового запуска без изменения репозитория укажите пакеты в поле **Additional package names for this build**, например:
 
-Для серверной части VPN можно использовать ваш форк:
-- [amneziawg-docker-server](https://github.com/Pushkin31/amneziawg-docker-server)
+```text
+curl nano
+```
+
+Workflow объединит этот список с `.config/config`, проверит доступность пакетов через `make manifest`, а затем соберёт образ. Если пакет недоступен в выбранной версии OpenWrt или имя указано с ошибкой, сборка завершится до создания образа.
+
+Пакеты AmneziaWG временно отключены до появления совместимого upstream-релиза для выбранной версии OpenWrt.
+
+## AmneziaWG
+
+AWG-пакеты и feed временно отключены. Причина — внешний проект пока не публикует совместимые пакеты для OpenWrt `25.12.6`.
 
 ## Быстрый старт
 
 1. Залейте этот код в свой репозиторий на GitHub.
-2. В настройках репозитория: `Settings -> Actions -> General -> Workflow permissions -> Read and write permissions` (для создания релизов).
-3. Перейдите во вкладку **Actions**.
-4. Запустите:
-   - **Build OpenWrt Firmware (Build-Only)** для тестовой сборки (сохранится в артефактах).
-   - **Build OpenWrt Firmware (Release)** для публикации на главной странице репозитория.
+2. В настройках репозитория откройте `Settings -> Actions -> General` и включите GitHub Actions.
+3. Перейдите во вкладку **Actions** и выберите workflow:
+   - **Build OpenWrt Firmware (Build-Only)** — тестовая сборка, результат будет в Artifacts.
+   - **Build OpenWrt Firmware (Release)** — сборка с публикацией GitHub Release.
+4. Нажмите **Run workflow** и заполните поля:
+   - `OpenWrt version to use`: например `25.12.6`.
+   - `Additional package names for this build`: например `curl nano` или оставьте пустым.
+   - `Custom build number override`: только для Release workflow, необязательно.
+5. Для первой проверки используйте **Build-Only**. После завершения откройте job и проверьте `bananapi_bpi-r3.manifest`.
 
 ## Установка и прошивка (Banana Pi BPI-R3)
 

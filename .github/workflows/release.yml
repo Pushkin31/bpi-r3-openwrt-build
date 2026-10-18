@@ -12,6 +12,11 @@ on:
         description: Custom build number override (optional)
         required: false
         type: string
+      additional_packages:
+        description: Additional package names for this build (space-separated)
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: write
@@ -23,3 +28,4 @@ jobs:
       publish_release: true
       openwrt_ref: ${{ inputs.openwrt_ref || '24.10.5' }}
       build_number: ${{ inputs.build_number }}
+      additional_packages: ${{ inputs.additional_packages }}

@@ -10,10 +10,10 @@ CONFIG_PACKAGE_luci-i18n-package-manager-ru=y
 # Disk utilities
 CONFIG_PACKAGE_cfdisk=y
 
-# AmneziaVPN packages
-CONFIG_PACKAGE_amneziawg-tools=y
-CONFIG_PACKAGE_kmod-amneziawg=m
-CONFIG_PACKAGE_luci-proto-amneziawg=y
+# AmneziaVPN packages (temporarily disabled: upstream packages are unavailable for current OpenWrt releases)
+# CONFIG_PACKAGE_amneziawg-tools=y
+# CONFIG_PACKAGE_kmod-amneziawg=m
+# CONFIG_PACKAGE_luci-proto-amneziawg=y
 
 # Standard packages
 CONFIG_PACKAGE_luci=y
@@ -25,6 +25,6 @@ CONFIG_PACKAGE_luci-app-samba4=y
 CONFIG_PACKAGE_luci-app-vsftpd=y
 CONFIG_PACKAGE_vsftpd-alt=y
 
-# AmneziaVPN dependencies
-CONFIG_PACKAGE_kmod-crypto-lib-chacha20=m
-CONFIG_PACKAGE_kmod-crypto-chacha20poly1305=m
+# AmneziaVPN dependencies (temporarily disabled with AmneziaVPN)
+# CONFIG_PACKAGE_kmod-crypto-lib-chacha20=m
+# CONFIG_PACKAGE_kmod-crypto-chacha20poly1305=m

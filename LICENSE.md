@@ -2,7 +2,7 @@
 
 Авторские права (c) 2026
 
-Данный проект представляет собой настраиваемую сборку OpenWrt для Banana Pi BPI-R3 с предустановленными пакетами, включая AmneziaVPN (awg).
+Данный проект представляет собой настраиваемую сборку OpenWrt для Banana Pi BPI-R3. Состав пакетов берётся из `.config/config`; пакеты AmneziaVPN временно отключены.
 
 ## Лицензия
 
@@ -12,7 +12,6 @@
 ## Используемые проекты
 
 - [OpenWrt](https://openwrt.org/) - GPL-2.0
-- [AmneziaVPN](https://github.com/amnezia-vpn) - GPL-3.0
 - [GitHub Actions](https://docs.github.com/en/actions) - использование регулируется пользовательским соглашением GitHub
 
 ## Вклад в проект
