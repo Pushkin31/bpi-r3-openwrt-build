@@ -22,7 +22,7 @@
 ### Ручной запуск (Workflow Dispatch)
 При запуске экшена можно указать:
 1. **OpenWrt version to use**: Версия OpenWrt (по умолчанию `24.10.5`). Можно указать, например, `25.12.0`.
-2. **Additional package names for this build**: Дополнительные пакеты через пробел, например `curl nano`. Они действуют только для текущей сборки и добавляются к пакетам из `.config/config`.
+2. **Additional package names for this build**: Дополнительные пакеты через пробел, например `jq bind-dig`. Они действуют только для текущей сборки и добавляются к пакетам из `.config/config`.
 3. **Custom build number override (optional)**: Только для Release workflow; переопределяет номер билда в названии релиза.
 
 ### Результат сборки
@@ -35,18 +35,30 @@
 
 Базовый список хранится в `.config/config`:
 
+В базу включены LuCI с русскими переводами и менеджером пакетов, `cfdisk`, `openssh-sftp-server`, а также повседневные утилиты `curl`, `nano`, `tmux` и `etherwake`. FTP, Samba, VPN и мониторинг добавляются по необходимости через Actions; пакет должен быть доступен для выбранной версии OpenWrt.
+
+Чтобы изменить базу:
+
 1. Добавьте пакет в формате `CONFIG_PACKAGE_<name>=y` или `=m`.
 2. Сделайте commit/push.
 
 Для разового запуска без изменения репозитория укажите пакеты в поле **Additional package names for this build**, например:
 
 ```text
-curl nano
+jq bind-dig
 ```
 
 Workflow объединит этот список с `.config/config`, проверит доступность пакетов через `make manifest`, а затем соберёт образ. Если пакет недоступен в выбранной версии OpenWrt или имя указано с ошибкой, сборка завершится до создания образа.
 
 Пакеты AmneziaWG временно отключены до появления совместимого upstream-релиза для выбранной версии OpenWrt.
+
+### Передача файлов и FTP
+
+Для передачи файлов по SSH в базе есть `openssh-sftp-server`: SFTP использует шифрованное SSH-соединение и не требует отдельного FTP-порта.
+
+Если нужен FTP, добавьте `vsftpd-tls` в **Additional package names for this build**. Для Samba добавьте `luci-app-samba4`. Установка FTP-сервера в OpenWrt обычно включает автозапуск службы: сервер начинает слушать TCP-порт 21, но пакет не добавляет разрешающие правила firewall. Доступ зависит от зоны, из которой приходит соединение; стандартная LAN разрешает входящие подключения, WAN отклоняет.
+
+Поддержка TLS в `vsftpd-tls` сама по себе не включает шифрование. Перед использованием настройте сертификат, `ssl_enable=YES`, `force_local_logins_ssl=YES` и `force_local_data_ssl=YES`. Оставляйте FTP доступным только из доверенной LAN/VPN, запретите анонимный вход, используйте отдельного пользователя с ограничением каталога и минимальными правами. Для пассивных передач задайте ограниченный диапазон `pasv_min_port`/`pasv_max_port`; открывать порт 21 и этот диапазон в WAN не требуется для доступа из LAN/VPN. Обычный `vsftpd` передаёт пароли и файлы без шифрования. Настройки описаны в [документации vsftpd](https://security.appspot.com/vsftpd/vsftpd_conf.html).
 
 ## AmneziaWG
 
@@ -61,7 +73,7 @@ AWG-пакеты и feed временно отключены. Причина —
    - **Build OpenWrt Firmware (Release)** — сборка с публикацией GitHub Release.
 4. Нажмите **Run workflow** и заполните поля:
    - `OpenWrt version to use`: например `25.12.6`.
-   - `Additional package names for this build`: например `curl nano` или оставьте пустым.
+   - `Additional package names for this build`: например `jq bind-dig`, `vsftpd-tls` или оставьте пустым для базового набора.
    - `Custom build number override`: только для Release workflow, необязательно.
 5. Для первой проверки используйте **Build-Only**. После завершения откройте job и проверьте `bananapi_bpi-r3.manifest`.
 

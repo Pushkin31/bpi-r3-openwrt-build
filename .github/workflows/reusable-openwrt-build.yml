@@ -135,7 +135,7 @@ jobs:
           for package in "${EXTRA_PACKAGES[@]}"; do
             if [[ ! "$package" =~ ^[-A-Za-z0-9+._:@~]+$ || "$package" == -* ]]; then
               echo "Invalid additional package name: $package"
-              echo "Use space-separated package names such as: curl nano"
+              echo "Use space-separated package names such as: jq bind-dig"
               exit 1
             fi
           done
