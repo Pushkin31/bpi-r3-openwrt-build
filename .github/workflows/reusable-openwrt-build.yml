@@ -29,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup environment
         run: |
@@ -60,7 +60,7 @@ jobs:
 
       - name: Restore ImageBuilder archive cache
         id: imagebuilder-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: imagebuilder.tar.zst
           key: ${{ runner.os }}-imagebuilder-${{ steps.imagebuilder.outputs.version }}-${{ steps.imagebuilder.outputs.sha256 }}
@@ -87,7 +87,7 @@ jobs:
       - name: Save ImageBuilder archive cache
         if: steps.imagebuilder-cache.outputs.cache-hit != 'true' && steps.download-imagebuilder.outcome == 'success'
         continue-on-error: true
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: imagebuilder.tar.zst
           key: ${{ runner.os }}-imagebuilder-${{ steps.imagebuilder.outputs.version }}-${{ steps.imagebuilder.outputs.sha256 }}
@@ -169,7 +169,7 @@ jobs:
           } > artifacts/release_notes.txt
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: openwrt-firmware-bpi-r3
           path: artifacts/*
@@ -182,7 +182,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: openwrt-firmware-bpi-r3
           path: dist
@@ -201,7 +201,7 @@ jobs:
           echo "name=OpenWrt BPI-R3 ImageBuilder build #${BUILD_NUM}.${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.meta.outputs.tag }}
           name: ${{ steps.meta.outputs.name }}
