@@ -22,8 +22,9 @@ CONFIG_PACKAGE_openssh-sftp-server=y
 
 # Home NAS / File sharing
 CONFIG_PACKAGE_luci-app-samba4=y
-CONFIG_PACKAGE_luci-app-vsftpd=y
-CONFIG_PACKAGE_vsftpd-alt=y
+CONFIG_PACKAGE_vsftpd-tls=y
+# Upstream 25.12.6 does not publish the legacy LuCI FTP configuration package.
+# CONFIG_PACKAGE_luci-app-vsftpd=y
 
 # AmneziaVPN dependencies (temporarily disabled with AmneziaVPN)
 # CONFIG_PACKAGE_kmod-crypto-lib-chacha20=m

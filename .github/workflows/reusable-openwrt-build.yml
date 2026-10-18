@@ -36,7 +36,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential libncurses5-dev gawk git gettext libssl-dev xsltproc rsync wget unzip python3 curl zstd
 
-      - name: Download and setup ImageBuilder
+      - name: Resolve ImageBuilder version and checksum
+        id: imagebuilder
         env:
           OPENWRT_REF: ${{ inputs.openwrt_ref }}
         run: |
@@ -46,19 +47,50 @@ jobs:
             echo "Invalid OpenWrt release: $VERSION"
             exit 1
           fi
-          URL="https://downloads.openwrt.org/releases/${VERSION}/targets/mediatek/filogic/openwrt-imagebuilder-${VERSION}-mediatek-filogic.Linux-x86_64.tar.zst"
-          SHA_URL="https://downloads.openwrt.org/releases/${VERSION}/targets/mediatek/filogic/sha256sums"
-
-          wget "$URL" -O imagebuilder.tar.zst
-          EXPECTED_SHA="$(wget -qO- "$SHA_URL" | awk -v file="$(basename "$URL")" '$2 == "*" file { print $1; exit }')"
+          FILENAME="openwrt-imagebuilder-${VERSION}-mediatek-filogic.Linux-x86_64.tar.zst"
+          BASE_URL="https://downloads.openwrt.org/releases/${VERSION}/targets/mediatek/filogic"
+          wget -qO imagebuilder-sha256sums "$BASE_URL/sha256sums"
+          EXPECTED_SHA="$(awk -v file="$FILENAME" '$2 == "*" file { print $1; exit }' imagebuilder-sha256sums)"
           if [[ ! "$EXPECTED_SHA" =~ ^[[:xdigit:]]{64}$ ]]; then
-            echo "ImageBuilder checksum is missing for $(basename "$URL")"
+            echo "ImageBuilder checksum is missing for $FILENAME"
             exit 1
           fi
-          printf '%s  %s\n' "$EXPECTED_SHA" imagebuilder.tar.zst | sha256sum -c -
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "sha256=$EXPECTED_SHA" >> "$GITHUB_OUTPUT"
 
+      - name: Restore ImageBuilder archive cache
+        id: imagebuilder-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: imagebuilder.tar.zst
+          key: ${{ runner.os }}-imagebuilder-${{ steps.imagebuilder.outputs.version }}-${{ steps.imagebuilder.outputs.sha256 }}
+
+      - name: Download, verify, and extract ImageBuilder
+        id: download-imagebuilder
+        env:
+          OPENWRT_VERSION: ${{ steps.imagebuilder.outputs.version }}
+          IMAGEBUILDER_SHA256: ${{ steps.imagebuilder.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          FILENAME="openwrt-imagebuilder-${OPENWRT_VERSION}-mediatek-filogic.Linux-x86_64.tar.zst"
+          URL="https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/targets/mediatek/filogic/${FILENAME}"
+
+          if [[ ! -f imagebuilder.tar.zst ]]; then
+            wget "$URL" -O imagebuilder.tar.zst
+          else
+            echo "Using cached ImageBuilder archive for OpenWrt ${OPENWRT_VERSION}"
+          fi
+          printf '%s  %s\n' "$IMAGEBUILDER_SHA256" imagebuilder.tar.zst | sha256sum -c -
           tar -I zstd -xf imagebuilder.tar.zst
           mv openwrt-imagebuilder-* imagebuilder
+
+      - name: Save ImageBuilder archive cache
+        if: steps.imagebuilder-cache.outputs.cache-hit != 'true' && steps.download-imagebuilder.outcome == 'success'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: imagebuilder.tar.zst
+          key: ${{ runner.os }}-imagebuilder-${{ steps.imagebuilder.outputs.version }}-${{ steps.imagebuilder.outputs.sha256 }}
 
 
       - name: Prepare custom configuration files
